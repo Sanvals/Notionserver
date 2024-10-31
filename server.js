@@ -12,7 +12,7 @@ app.use(cors())
 // Initialize the Notion client with the integration token
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
 
-app.get("/getUrls", async function (request, response) {
+app.get("/", async function (request, response) {
     notion.databases.query({
         database_id: process.env.DATABASE_ID,
         filter: {
