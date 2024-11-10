@@ -1,29 +1,52 @@
 const express = require("express");
-const cors = require('cors')
-
+const cors = require('cors');
 const { Client } = require("@notionhq/client");
 require("dotenv").config();
 
 const app = express();
 const port = 3000;
 
-app.use(cors())
+app.use(cors());
 
 // Initialize the Notion client with the integration token
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
 
+// Function to fetch all pages from the Notion database
+async function fetchAllPages() {
+    let results = [];
+    let hasMore = true;
+    let startCursor = undefined;
+
+    // Loop to handle pagination
+    while (hasMore) {
+        const response = await notion.databases.query({
+            database_id: process.env.DATABASE_ID,
+            filter: {
+                property: "Show",
+                checkbox: {
+                    equals: true
+                }
+            },
+            start_cursor: startCursor
+        });
+
+        // Collect the results
+        results = results.concat(response.results);
+
+        // Check if there are more pages
+        hasMore = response.has_more;
+        startCursor = response.next_cursor;
+    }
+
+    return results;
+}
+
 app.get("/", async function (request, response) {
-    notion.databases.query({
-        database_id: process.env.DATABASE_ID,
-        filter: {
-            property: "Show",
-            checkbox: {
-                equals: true
-            }
-        }
-    }).then(res => {
+    try {
+        const results = await fetchAllPages();
+
         // Extract URLs from the response
-        const links = res.results.map(result => {
+        const links = results.map(result => {
             return {
                 tag: result.properties.Tags.select.name,
                 num: result.properties.Number.number,
@@ -31,32 +54,28 @@ app.get("/", async function (request, response) {
                 url: result.properties.URL.url,
                 icon: result.properties.Icon.url
             };
-        })
-        
-        let tagList = links.map(link => link.tag)
+        });
+        console.log(links.length)
+
+        // Create a list of unique tags
+        let tagList = links.map(link => link.tag);
         tagList = [...new Set(tagList)].sort();
-        const cleanData = {}
+
+        // Organize links by tag
+        const cleanData = {};
 
         tagList.forEach(tag => {
-            links.forEach(link => {
-                if (link.tag === tag) {
-                    if (cleanData[tag]) {
-                        cleanData[tag].push(link)
-                    } else {
-                        cleanData[tag] = [link]
-                    }
-                }
-            })
-            cleanData[tag].sort((a, b) => a.num - b.num)
-        })
+            cleanData[tag] = links
+                .filter(link => link.tag === tag)
+                .sort((a, b) => a.num - b.num);
+        });
 
-        // Send the array of URLs as JSON
+        // Send the organized data as JSON
         response.json(cleanData);
-
-    }).catch(error => {
+    } catch (error) {
         console.error("Error querying Notion:", error);
         response.status(500).json({ error: "Failed to fetch data from Notion" });
-    });
+    }
 });
 
 app.listen(port, () => {
