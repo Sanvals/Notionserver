@@ -8,7 +8,6 @@ const port = 3000;
 
 app.use(cors());
 
-// Initialize the Notion client with the integration token
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
 
 // Function to fetch all pages from the Notion database
@@ -17,67 +16,76 @@ async function fetchAllPages() {
     let hasMore = true;
     let startCursor = undefined;
 
-    // Loop to handle pagination
     while (hasMore) {
-        const response = await notion.databases.query({
-            database_id: process.env.DATABASE_ID,
-            filter: {
-                property: "Show",
-                checkbox: {
-                    equals: true
-                }
-            },
-            start_cursor: startCursor
-        });
+        try {
+            const response = await notion.databases.query({
+                database_id: process.env.DATABASE_ID,
+                filter: {
+                    property: "Show",
+                    checkbox: {
+                        equals: true
+                    }
+                },
+                start_cursor: startCursor
+            });
 
-        // Collect the results
-        results = results.concat(response.results);
-
-        // Check if there are more pages
-        hasMore = response.has_more;
-        startCursor = response.next_cursor;
+            // Append results and update cursor for next fetch
+            results = results.concat(response.results);
+            hasMore = response.has_more;
+            startCursor = response.next_cursor;
+        } catch (error) {
+            console.error("Error querying Notion during pagination:", error);
+            throw new Error("Failed to fetch all data from Notion");
+        }
     }
 
     return results;
 }
 
-app.get("/", async function (request, response) {
+app.get("/", async (request, response) => {
     try {
         const results = await fetchAllPages();
 
-        // Extract URLs from the response
-        const links = results.map(result => {
-            return {
-                tag: result.properties.Tags.select.name,
-                num: result.properties.Number.number,
-                name: result.properties.Name.title[0].text.content,
-                url: result.properties.URL.url,
-                icon: result.properties.Icon.url
+        // Group and sort links by tags using reduce
+        const cleanData = results.reduce((acc, result) => {
+            const { Tags, Number, Name, URL, Icon } = result.properties;
+
+            const tag = Tags?.select?.name || "Uncategorized";
+            const link = {
+                tag,
+                num: Number?.number || 0,
+                name: Name?.title[0]?.text?.content || "Untitled",
+                url: URL?.url || "",
+                icon: Icon?.url || ""
             };
-        });
-        console.log(links.length)
 
-        // Create a list of unique tags
-        let tagList = links.map(link => link.tag);
-        tagList = [...new Set(tagList)].sort();
+            if (!acc[tag]) acc[tag] = [];
+            acc[tag].push(link);
 
-        // Organize links by tag
-        const cleanData = {};
+            return acc;
+        }, {});
 
-        tagList.forEach(tag => {
-            cleanData[tag] = links
-                .filter(link => link.tag === tag)
-                .sort((a, b) => a.num - b.num);
+        // Sort each tag group by the `num` property
+        Object.keys(cleanData).forEach(tag => {
+            cleanData[tag].sort((a, b) => a.num - b.num);
         });
 
-        // Send the organized data as JSON
-        response.json(cleanData);
+        // Create a sorted version of cleanData by tag names
+        const sortedCleanData = Object.keys(cleanData)
+            .sort((a, b) => a.localeCompare(b)) // Alphabetically sort the tag names
+            .reduce((sortedAcc, tag) => {
+                sortedAcc[tag] = cleanData[tag];
+                return sortedAcc;
+            }, {});
+
+        // Send the organized and sorted data as JSON
+        response.json(sortedCleanData);
     } catch (error) {
-        console.error("Error querying Notion:", error);
-        response.status(500).json({ error: "Failed to fetch data from Notion" });
+        console.error("Error processing request:", error);
+        response.status(500).json({ error: "Failed to process data" });
     }
 });
 
 app.listen(port, () => {
-    console.log(`Server running at ${port || 3000}`);
+    console.log(`Server running at port ${port}`);
 });
