@@ -113,7 +113,7 @@ app.get("/refreshData", async (request, response) => {
 
         // Send the organized and sorted data as JSON
         initializeValidUrls();
-        response.json(sortedCleanData);
+        response.status(200).json(sortedCleanData);
     } catch (error) {
         console.error("Error processing request:", error);
         response.status(500).json({ error: "Failed to process data" });
