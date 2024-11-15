@@ -10,6 +10,10 @@ app.use(cors());
 
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
 
+let currentUrl = "";
+let currentData = {};
+let validUrls = [];
+
 // Function to fetch all pages from the Notion database
 async function fetchAllPages() {
     let results = [];
@@ -42,7 +46,35 @@ async function fetchAllPages() {
     return results;
 }
 
-app.get("/", async (request, response) => {
+// Store all the urls from notion page into valudUrls
+async function initializeValidUrls() {
+    try {
+        const results = await fetchAllPages();
+
+        // Process and store the valid URLs
+        validUrls = results
+            .map(result => result.properties.URL?.url || "")
+            .filter(url => url !== ""); // Ensure no empty URLs
+    } catch (error) {
+        console.error("Error initializing valid URLs:", error);
+    }
+}
+
+/*
+    Enpoints:
+    / - Gets links from notion and stores on 'currentData'
+    /refreshData - Gets info from 'currentData'
+    /empty - Empties currentUrl
+    /set_url/:url - Validates and sets currentUrl
+    /get_url - Gets the currentUrl
+*/
+
+app.get("/", (request, response) => {
+    response.json(currentData);
+})
+
+
+app.get("/refreshData", async (request, response) => {
     try {
         const results = await fetchAllPages();
 
@@ -75,16 +107,42 @@ app.get("/", async (request, response) => {
             .sort((a, b) => a.localeCompare(b)) // Alphabetically sort the tag names
             .reduce((sortedAcc, tag) => {
                 sortedAcc[tag] = cleanData[tag];
+                currentData = sortedAcc;
                 return sortedAcc;
             }, {});
 
         // Send the organized and sorted data as JSON
+        initializeValidUrls();
         response.json(sortedCleanData);
     } catch (error) {
         console.error("Error processing request:", error);
         response.status(500).json({ error: "Failed to process data" });
     }
 });
+
+
+app.get("/empty", (request, response) => {
+    currentUrl = "";
+    response.json({ message: "Link emptied" });
+})
+
+
+app.get("/set_url/:url", (request, response) => {
+    const requestedUrl = decodeURIComponent(request.params.url);
+    const checker = validUrls.includes('https://' + requestedUrl)
+    if (checker) {
+        currentUrl = requestedUrl;
+        response.json({ message: "URL set", url: requestedUrl });
+    } else {
+        response.status(400).json({ error: "Invalid URL" });
+    }
+})
+
+
+app.get("/get_url", (request, response) => {
+    response.json({ url: currentUrl });
+})
+
 
 app.listen(port, () => {
     console.log(`Server running at port ${port}`);
