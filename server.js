@@ -63,18 +63,13 @@ async function initializeValidUrls() {
 /*
     Enpoints:
     / - Gets links from notion and stores on 'currentData'
-    /refreshData - Gets info from 'currentData'
     /empty - Empties currentUrl
     /set_url/:url - Validates and sets currentUrl
     /get_url - Gets the currentUrl
 */
 
-app.get("/", (request, response) => {
-    response.json(currentData);
-})
 
-
-app.get("/refreshData", async (request, response) => {
+app.get("/", async (request, response) => {
     try {
         const results = await fetchAllPages();
 
